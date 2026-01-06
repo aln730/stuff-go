@@ -43,6 +43,9 @@ func main() {
 	r.GET("/items/:id", getItem)
 	r.POST("/items", createItem)
 
+	r.GET("/categories", getCategories)
+	r.POST("/categories", createCategory)
+
 	log.Println("Server listening on :8080")
 	r.Run(":8080")
 }
@@ -148,4 +151,50 @@ func createItem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, i)
+}
+
+func getCategories(c *gin.Context) {
+	rows, err := db.QueryContext(context.Background(), `
+		SELECT id, name, description, created_at
+		FROM categories
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	cats := []Category{}
+	for rows.Next() {
+		var cat Category
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		cats = append(cats, cat)
+	}
+
+	c.JSON(http.StatusOK, cats)
+}
+
+func createCategory(c *gin.Context) {
+	var cat Category
+	if err := c.BindJSON(&cat); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err := db.QueryRowContext(context.Background(), `
+		INSERT INTO categories (name, description)
+		VALUES ($1, $2)
+		RETURNING id, created_at
+	`, cat.Name, cat.Description).Scan(&cat.ID, &cat.CreatedAt)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, cat)
 }
